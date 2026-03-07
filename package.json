@@ -18,7 +18,14 @@
     "test:api": "cross-env NODE_ENV=test vitest run tests/api/ && cross-env NODE_ENV=test REPORT_TYPE=api ts-node scripts/generate-test-report.ts",
     "test:unit": "cross-env NODE_ENV=test vitest run tests/unit/ && cross-env NODE_ENV=test REPORT_TYPE=unit ts-node scripts/generate-test-report.ts",
     "test:integration": "cross-env NODE_ENV=test vitest run tests/integration/ && cross-env NODE_ENV=test REPORT_TYPE=integration ts-node scripts/generate-test-report.ts",
-    "test:all": "cross-env NODE_ENV=test vitest run; EXIT=$?; cross-env NODE_ENV=test REPORT_TYPE=all ts-node scripts/generate-test-report.ts; exit $EXIT"
+    "test:all": "cross-env NODE_ENV=test vitest run; EXIT=$?; cross-env NODE_ENV=test REPORT_TYPE=all ts-node scripts/generate-test-report.ts; exit $EXIT",
+    "test:stress-full": "cross-env NODE_ENV=test ts-node --transpile-only tests/stress/test-booking-full-auth.ts",
+    "test:stress-bypass": "cross-env NODE_ENV=test ts-node --transpile-only tests/stress/test-booking-bypass-auth.ts",
+    "test:rate-limit": "cross-env NODE_ENV=test ts-node --transpile-only tests/stress/test-rate-limiting.ts",
+    "test:tokens": "cross-env NODE_ENV=test ts-node --transpile-only tests/scripts/generate-stress-tokens.ts",
+    "test:mega-auth": "cross-env NODE_ENV=test ts-node --transpile-only tests/stress/test-booking-mega-auth.ts",
+    "test:report": "ts-node --transpile-only scripts/generate-html-report.ts",
+    "db:seed-stress": "cross-env NODE_ENV=test ts-node tests/scripts/seed-test-users.ts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -27,6 +34,7 @@
     "express": "^4.21.0",
     "express-rate-limit": "^7.4.1",
     "helmet": "^7.1.0",
+    "ioredis": "^5.10.0",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.0",
     "winston": "^3.14.0",
@@ -36,15 +44,16 @@
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/ioredis": "^4.28.10",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.9.0",
     "@types/pg": "^8.11.6",
+    "@types/supertest": "^6.0.2",
     "cross-env": "^10.1.0",
+    "supertest": "^7.0.0",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.9",
-    "supertest": "^7.0.0",
-    "@types/supertest": "^6.0.2"
+    "vitest": "^2.1.9"
   }
 }

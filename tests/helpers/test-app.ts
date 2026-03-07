@@ -1,6 +1,14 @@
 // Test app setup - loads config and returns supertest agent for API requests
+import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+loadEnv({ path: '.env.dev' });
+
 import supertest from 'supertest';
 import { loadAndValidateConfig } from '../../src/infrastructure/config/config.loader';
+
+// Must load config BEFORE importing app. When compiled to CommonJS, this runs in order.
+loadAndValidateConfig();
+
 import { app } from '../../src/app';
 
 let configLoaded = false;

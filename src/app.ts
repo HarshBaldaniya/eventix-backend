@@ -2,7 +2,7 @@
 import cors from 'cors';
 import express from 'express';
 import { routes } from './presentation/routes/routes';
-import { errorHandlerMiddleware } from './presentation/middlewares/error-handler.middleware';
+import { errorHandler } from './presentation/middlewares/error-handler.middleware';
 import { requestIdMiddleware } from './presentation/middlewares/request-id.middleware';
 import { rateLimitMiddleware } from './presentation/middlewares/rate-limit.middleware';
 import { apiConstants } from './shared/constants/api.constants';
@@ -31,6 +31,6 @@ app.use((req, res) => {
   });
 });
 
-app.use(errorHandlerMiddleware);
+app.use(errorHandler);
 
 export { app };

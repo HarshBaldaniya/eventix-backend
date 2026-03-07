@@ -1,4 +1,4 @@
-// Generates test-reports/TEST-REPORT-{API|UNIT}.md from test-reports/test-results.json (written by Vitest JSON reporter)
+// Test Report Generator: Transforms Vitest JSON output into a formatted Markdown report
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import { config } from 'dotenv';
@@ -6,7 +6,6 @@ import { config } from 'dotenv';
 const REPORTS_DIR = resolve(process.cwd(), 'test-reports');
 const REPORT_TYPE = (process.env.REPORT_TYPE || 'all').toLowerCase();
 const JSON_PATH = resolve(REPORTS_DIR, 'test-results.json');
-// When REPORT_TYPE=all: single combined report (TEST-REPORT.md, test-results.json)
 const isCombined = REPORT_TYPE === 'all';
 const REPORT_FILE = isCombined ? 'TEST-REPORT.md' : `TEST-REPORT-${REPORT_TYPE.toUpperCase()}.md`;
 const JSON_FILE = isCombined ? 'test-results.json' : `test-results-${REPORT_TYPE}.json`;
@@ -40,7 +39,6 @@ function getTestCategory(filePath: string): 'API' | 'Unit' | 'Integration' {
   return 'API';
 }
 
-/** Load env in same order as vitest.setup.ts; returns which file was used and DB config */
 function loadTestEnv(): { envFile: string; dbHost: string; dbPort: string; dbName: string; dbUser: string; dbPoolMax: string } {
   const root = resolve(process.cwd());
   const candidates: { path: string; name: string }[] = [
@@ -69,42 +67,19 @@ function loadTestEnv(): { envFile: string; dbHost: string; dbPort: string; dbNam
 
 function main(): void {
   const env = loadTestEnv();
-  if (!existsSync(REPORTS_DIR)) {
-    mkdirSync(REPORTS_DIR, { recursive: true });
-  }
+  if (!existsSync(REPORTS_DIR)) mkdirSync(REPORTS_DIR, { recursive: true });
   if (!existsSync(JSON_PATH)) {
-    console.warn(`[generate-test-report] ${JSON_PATH} not found. Run tests with JSON reporter first.`);
-    process.exit(0);
+    console.warn(`[report] ${JSON_PATH} not found. Run tests with JSON reporter first.`);
+    return;
   }
+
   const raw = readFileSync(JSON_PATH, 'utf-8');
-  let data: {
-    numTotalTests?: number;
-    numPassedTests?: number;
-    numFailedTests?: number;
-    numSkippedTests?: number;
-    numPendingTests?: number;
-    startTime?: number;
-    success?: boolean;
-    testResults?: Array<{
-      name: string;
-      status: string;
-      message?: string;
-      startTime?: number;
-      endTime?: number;
-      assertionResults?: Array<{
-        fullName: string;
-        status: string;
-        duration?: number;
-        title?: string;
-        failureMessages?: string[];
-      }>;
-    }>;
-  };
+  let data: any;
   try {
     data = JSON.parse(raw);
   } catch {
-    console.warn('[generate-test-report] Invalid JSON in test-results.json');
-    process.exit(0);
+    console.error('[report] Invalid JSON in test-results.json');
+    return;
   }
 
   const prettyJson = JSON.stringify(data, null, 2);
@@ -121,12 +96,11 @@ function main(): void {
   const cmd = process.env.npm_lifecycle_event || 'vitest run';
 
   const testResults = data.testResults ?? [];
-  const apiFiles = testResults.filter((r) => getTestCategory(r.name) === 'API');
-  const unitFiles = testResults.filter((r) => getTestCategory(r.name) === 'Unit');
-  const integrationFiles = testResults.filter((r) => getTestCategory(r.name) === 'Integration');
+  const apiFiles = testResults.filter((r: any) => getTestCategory(r.name) === 'API');
+  const unitFiles = testResults.filter((r: any) => getTestCategory(r.name) === 'Unit');
+  const integrationFiles = testResults.filter((r: any) => getTestCategory(r.name) === 'Integration');
 
-  let md = '';
-  md += `# Test Execution Report\n\n`;
+  let md = `# Test Execution Report\n\n`;
   md += `> **Generated:** ${now.toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'long' })}\n`;
   md += `> **Command:** \`npm run ${cmd}\`\n`;
   md += `> **Duration:** ${formatDuration(durationMs)}\n`;
@@ -143,128 +117,53 @@ function main(): void {
   md += `| **Duration** | ${formatDuration(durationMs)} |\n\n`;
 
   md += `---\n\n## 🔌 Environment & Database\n\n`;
-  md += `Tests use the same env loading order as \`vitest.setup.ts\`: \`.env.test\` → \`.env\` → \`.env.dev\` → \`.env.example\`.\n\n`;
   md += `| Setting | Value |\n`;
   md += `| :------ | :---- |\n`;
   md += `| **Env file used** | \`${env.envFile}\` |\n`;
   md += `| **NODE_ENV** | \`${process.env.NODE_ENV ?? '—'}\` |\n`;
   md += `| **DB Host** | \`${env.dbHost}\` |\n`;
-  md += `| **DB Port** | \`${env.dbPort}\` |\n`;
-  md += `| **DB Name** | \`${env.dbName}\` |\n`;
-  md += `| **DB User** | \`${env.dbUser}\` |\n`;
-  md += `| **DB Pool Max** | \`${env.dbPoolMax}\` |\n\n`;
-  md += `**Connection string format:** \`postgresql://${env.dbUser}@${env.dbHost}:${env.dbPort}/${env.dbName}\` (password from env, not shown)\n\n`;
+  md += `| **DB Name** | \`${env.dbName}\` |\n\n`;
 
-  md += `## 📁 Test Coverage\n\n`;
-  md += `| Category | Files | Tests |\n`;
-  md += `| :------- | ----: | ----: |\n`;
-  md += `| API | ${apiFiles.length} | ${apiFiles.reduce((s, f) => s + (f.assertionResults?.length ?? 0), 0)} |\n`;
-  md += `| Unit | ${unitFiles.length} | ${unitFiles.reduce((s, f) => s + (f.assertionResults?.length ?? 0), 0)} |\n`;
-  md += `| Integration | ${integrationFiles.length} | ${integrationFiles.reduce((s, f) => s + (f.assertionResults?.length ?? 0), 0)} |\n\n`;
-
-  const failedAssertions = testResults.flatMap((r) =>
+  const failedAssertions = testResults.flatMap((r: any) =>
     (r.assertionResults ?? [])
-      .filter((a) => a.status === 'failed' && (a.failureMessages?.length ?? 0) > 0)
-      .map((a) => ({ file: r.name, fullName: a.fullName, messages: a.failureMessages ?? [] }))
+      .filter((a: any) => a.status === 'failed' && (a.failureMessages?.length ?? 0) > 0)
+      .map((a: any) => ({ file: r.name, fullName: a.fullName, messages: a.failureMessages ?? [] }))
   );
   if (failedAssertions.length > 0) {
     md += `---\n\n## ❌ Failed Tests (Details)\n\n`;
-    for (const { file, fullName, messages } of failedAssertions) {
+    for (const { file, fullName, messages } of failedAssertions as any) {
       const shortFile = file.split(/[/\\]/).pop() ?? file;
-      md += `### \`${shortFile}\`\n\n`;
-      md += `**${fullName}**\n\n`;
+      md += `### \`${shortFile}\`\n\n**${fullName}**\n\n`;
       for (const msg of messages) {
         md += `\`\`\`\n${msg.split('\n').slice(0, 5).join('\n')}\n\`\`\`\n\n`;
       }
     }
   }
 
-  if (apiFiles.length > 0) {
-    md += `---\n\n## 🌐 API Tests\n\n`;
-    for (const fileResult of apiFiles) {
+  const renderSection = (title: string, files: any[], emoji: string) => {
+    if (files.length === 0) return;
+    md += `---\n\n## ${emoji} ${title}\n\n`;
+    for (const fileResult of files) {
       const shortFile = fileResult.name.split(/[/\\]/).pop() ?? fileResult.name;
-      const desc = TEST_DESCRIPTIONS[shortFile] ?? 'API endpoints';
+      const desc = TEST_DESCRIPTIONS[shortFile] ?? 'Tests';
       const assertions = fileResult.assertionResults ?? [];
-      const filePassed = assertions.filter((a) => a.status === 'passed').length;
-      const fileFailed = assertions.filter((a) => a.status === 'failed').length;
+      const fileFailed = assertions.filter((a: any) => a.status === 'failed').length;
       const statusIcon = fileFailed > 0 ? '❌' : '✅';
-      md += `### ${statusIcon} ${shortFile}\n\n`;
-      md += `*${desc}*\n\n`;
-      md += `| Status | Passed | Failed | Total |\n`;
-      md += `| :----- | -----: | -----: | ----: |\n`;
-      md += `| ${fileFailed > 0 ? 'Failed' : 'Passed'} | ${filePassed} | ${fileFailed} | ${assertions.length} |\n\n`;
-      md += `**Test cases:**\n\n`;
+      md += `### ${statusIcon} ${shortFile}\n\n*${desc}*\n\n`;
       for (const a of assertions) {
         const icon = a.status === 'passed' ? '✓' : a.status === 'skipped' ? '⊘' : '✗';
         md += `- ${icon} \`${a.fullName ?? a.title ?? a.status}\`\n`;
       }
       md += `\n`;
     }
-  }
+  };
 
-  if (unitFiles.length > 0) {
-    md += `---\n\n## 🔬 Unit Tests\n\n`;
-    for (const fileResult of unitFiles) {
-      const shortFile = fileResult.name.split(/[/\\]/).pop() ?? fileResult.name;
-      const desc = TEST_DESCRIPTIONS[shortFile] ?? 'Service/repository logic with mocks';
-      const assertions = fileResult.assertionResults ?? [];
-      const filePassed = assertions.filter((a) => a.status === 'passed').length;
-      const fileFailed = assertions.filter((a) => a.status === 'failed').length;
-      const statusIcon = fileFailed > 0 ? '❌' : '✅';
-      md += `### ${statusIcon} ${shortFile}\n\n`;
-      md += `*${desc}*\n\n`;
-      md += `| Status | Passed | Failed | Total |\n`;
-      md += `| :----- | -----: | -----: | ----: |\n`;
-      md += `| ${fileFailed > 0 ? 'Failed' : 'Passed'} | ${filePassed} | ${fileFailed} | ${assertions.length} |\n\n`;
-      md += `**Test cases:**\n\n`;
-      for (const a of assertions) {
-        const icon = a.status === 'passed' ? '✓' : a.status === 'skipped' ? '⊘' : '✗';
-        md += `- ${icon} \`${a.fullName ?? a.title ?? a.status}\`\n`;
-      }
-      md += `\n`;
-    }
-  }
-
-  if (integrationFiles.length > 0) {
-    md += `---\n\n## 🔗 Integration Tests\n\n`;
-    for (const fileResult of integrationFiles) {
-      const shortFile = fileResult.name.split(/[/\\]/).pop() ?? fileResult.name;
-      const desc = TEST_DESCRIPTIONS[shortFile] ?? 'End-to-end flow with real DB';
-      const assertions = fileResult.assertionResults ?? [];
-      const filePassed = assertions.filter((a) => a.status === 'passed').length;
-      const fileFailed = assertions.filter((a) => a.status === 'failed').length;
-      const statusIcon = fileFailed > 0 ? '❌' : '✅';
-      md += `### ${statusIcon} ${shortFile}\n\n`;
-      md += `*${desc}*\n\n`;
-      md += `| Status | Passed | Failed | Total |\n`;
-      md += `| :----- | -----: | -----: | ----: |\n`;
-      md += `| ${fileFailed > 0 ? 'Failed' : 'Passed'} | ${filePassed} | ${fileFailed} | ${assertions.length} |\n\n`;
-      md += `**Test cases:**\n\n`;
-      for (const a of assertions) {
-        const icon = a.status === 'passed' ? '✓' : a.status === 'skipped' ? '⊘' : '✗';
-        md += `- ${icon} \`${a.fullName ?? a.title ?? a.status}\`\n`;
-      }
-      md += `\n`;
-    }
-  }
-
-  md += `---\n\n## 🗄️ Database Tables Used\n\n`;
-  md += `| Table | Purpose |\n`;
-  md += `| :---- | :------ |\n`;
-  md += `| \`users\` | Auth, bookings, audit log user_id |\n`;
-  md += `| \`sessions\` | Login/logout, refresh tokens |\n`;
-  md += `| \`events\` | Event catalog, capacity, booked_count |\n`;
-  md += `| \`bookings\` | User bookings, ticket_count, status |\n`;
-  md += `| \`event_audit_log\` | Audit trail for event create/update |\n`;
-  md += `| \`booking_audit_log\` | Audit trail for book/cancel |\n`;
-  md += `| \`event_booking_config\` | Max tickets per booking/user |\n\n`;
-
-  md += `---\n\n## 🧹 Post-Run Cleanup\n\n`;
-  md += `Global teardown runs after all tests: deletes users (email like \`%@test.local\`), test events. Cascades to sessions, bookings, event_audit_log, booking_audit_log.\n`;
+  renderSection('API Tests', apiFiles, '🌐');
+  renderSection('Unit Tests', unitFiles, '🔬');
+  renderSection('Integration Tests', integrationFiles, '🔗');
 
   writeFileSync(OUT_PATH, md);
   console.log(`\n[report] test-reports/${REPORT_FILE} written`);
-  console.log(`[report] test-reports/${JSON_FILE} written`);
 }
 
 main();

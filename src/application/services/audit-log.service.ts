@@ -1,4 +1,4 @@
-// Audit log service - list entries (admin only), queries event_audit_log + booking_audit_log
+// Audit log service: Retrieves combined event and booking audit entries for administrative review
 import { ICombinedAuditRepository } from '../../domain/interfaces/combined-audit.repository.interface';
 import type {
   CombinedAuditListFilters,
@@ -26,7 +26,7 @@ export interface AuditLogListDto {
 }
 
 export class AuditLogService {
-  constructor(private readonly combinedAuditRepo: ICombinedAuditRepository) {}
+  constructor(private readonly combinedAuditRepo: ICombinedAuditRepository) { }
 
   async listAuditLog(filters: CombinedAuditListFilters): Promise<AuditLogListDto> {
     const { logs, total } = await this.combinedAuditRepo.findAll(filters);

@@ -33,7 +33,9 @@ export async function executeInTransaction<T>(
     return result;
   } catch (err) {
     await client.query('ROLLBACK');
-    appLogger.error({ label: logLabel, msg: 'Transaction rolled back', err });
+    if (process.env.NODE_ENV !== 'test') {
+      appLogger.error({ label: logLabel, msg: 'Transaction rolled back', err });
+    }
     throw err;
   } finally {
     client.release();

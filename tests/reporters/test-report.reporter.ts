@@ -160,7 +160,7 @@ function buildReport(testResults: TestResult[], durationMs: number): string {
   return md;
 }
 
-export default class TestReportReporter implements Reporter {
+export default class TestReportReporter {
   private startTime = 0;
   private collectedResults: TestResult[] = [];
 

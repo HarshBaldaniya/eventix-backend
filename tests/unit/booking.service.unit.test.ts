@@ -4,6 +4,21 @@ import { BookingService } from '../../src/application/services/booking.service';
 import { AppError } from '../../src/shared/errors/app.error';
 import { EVB403001, EVB404001, EVB409001, EVB409004, EVB409005, EVB409006, EVB422001 } from '../../src/shared/constants/error-code.constants';
 
+const mockRedis = {
+  exists: vi.fn(),
+  setnx: vi.fn(),
+  decrby: vi.fn(),
+  incrby: vi.fn(),
+  get: vi.fn(),
+  set: vi.fn(),
+  del: vi.fn(),
+};
+
+vi.mock('../../src/infrastructure/database/redis.client', () => ({
+  getRedisClient: () => mockRedis,
+  getEventSpotsKey: (id: number) => `event:${id}:spots`,
+}));
+
 const mockClient = {};
 
 function createMocks() {
@@ -11,7 +26,7 @@ function createMocks() {
   const transactionManager = { executeInTransaction };
 
   const eventRepo = {
-    findByIdWithClient: vi.fn(),
+    findById: vi.fn(),
     reserveSpots: vi.fn(),
     lockForUpdate: vi.fn(),
     decrementBookedCount: vi.fn(),
@@ -45,6 +60,9 @@ describe('BookingService', () => {
 
   beforeEach(() => {
     mocks = createMocks();
+    vi.clearAllMocks();
+    mockRedis.exists.mockResolvedValue(1);
+    mockRedis.decrby.mockResolvedValue(1);
     mocks.bookingConfigRepo.getForEvent.mockResolvedValue({ max_tickets_per_booking: 5, max_tickets_per_user: 10 });
     service = new BookingService(
       mocks.transactionManager as never,
@@ -57,13 +75,14 @@ describe('BookingService', () => {
 
   describe('bookSpot', () => {
     it('throws 404 when event not found', async () => {
-      mocks.eventRepo.findByIdWithClient.mockResolvedValue(null);
+      mockRedis.exists.mockResolvedValue(0);
+      mocks.eventRepo.findById.mockResolvedValue(null);
       await expect(service.bookSpot(999, 1, 1)).rejects.toThrow(AppError);
       await expect(service.bookSpot(999, 1, 1)).rejects.toMatchObject({ errorCode: EVB404001 });
     });
 
     it('throws 409 when event is not published', async () => {
-      mocks.eventRepo.findByIdWithClient.mockResolvedValue({
+      mocks.eventRepo.lockForUpdate.mockResolvedValue({
         id: 1,
         status: 'draft',
         remaining_spots: 10,
@@ -74,20 +93,15 @@ describe('BookingService', () => {
       await expect(service.bookSpot(1, 1, 1)).rejects.toMatchObject({ errorCode: EVB409006 });
     });
 
-    it('throws 409 when event is sold out', async () => {
-      mocks.eventRepo.findByIdWithClient.mockResolvedValue({
-        id: 1,
-        status: 'published',
-        remaining_spots: 0,
-        capacity: 10,
-        booked_count: 10,
-      });
+    it('throws 409 when event is sold out (Redis)', async () => {
+      mockRedis.decrby.mockResolvedValue(-1);
+      mocks.eventRepo.findById.mockResolvedValue({ id: 1 }); // Still exists in DB
       await expect(service.bookSpot(1, 1, 1)).rejects.toThrow(AppError);
       await expect(service.bookSpot(1, 1, 1)).rejects.toMatchObject({ errorCode: EVB409001 });
     });
 
     it('throws 409 when ticket_count exceeds max_tickets_per_booking', async () => {
-      mocks.eventRepo.findByIdWithClient.mockResolvedValue({
+      mocks.eventRepo.lockForUpdate.mockResolvedValue({
         id: 1,
         status: 'published',
         remaining_spots: 10,
@@ -100,7 +114,7 @@ describe('BookingService', () => {
     });
 
     it('throws 409 when user exceeds max_tickets_per_user', async () => {
-      mocks.eventRepo.findByIdWithClient.mockResolvedValue({
+      mocks.eventRepo.lockForUpdate.mockResolvedValue({
         id: 1,
         status: 'published',
         remaining_spots: 10,
@@ -114,7 +128,7 @@ describe('BookingService', () => {
     });
 
     it('returns booking when successful', async () => {
-      mocks.eventRepo.findByIdWithClient.mockResolvedValue({
+      mocks.eventRepo.lockForUpdate.mockResolvedValue({
         id: 1,
         status: 'published',
         remaining_spots: 10,

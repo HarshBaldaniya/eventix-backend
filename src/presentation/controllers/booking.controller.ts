@@ -1,4 +1,4 @@
-// Booking controller - book spot, list, get, cancel
+// Booking controller: Handles book spot, list, get, and cancel requests
 import { Request, Response } from 'express';
 import { BookingService } from '../../application/services/booking.service';
 import { STATUS_CODE_OK, STATUS_CODE_CREATED } from '../../shared/constants/status-code.constants';
@@ -17,7 +17,7 @@ import { EVB401001 } from '../../shared/constants/error-code.constants';
 export class BookingController {
   constructor(private readonly bookingService: BookingService) { }
 
-  /** POST /events/:id/bookings - eventId from params, ticket_count from body */
+  // POST /events/:id/bookings - eventId from params, ticket_count from body
   bookSpotForEvent = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id: eventId } = parseOrThrow(bookingIdParamSchema, req.params);
     const body = parseOrThrow(bookSpotForEventSchema, req.body ?? {});

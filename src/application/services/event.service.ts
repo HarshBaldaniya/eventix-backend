@@ -1,4 +1,4 @@
-// Event service - list, get by ID, create, update (create/update admin only)
+// Event service: Handles listing, retrieval, creation, and updates for events
 import { IEventRepository } from '../../domain/interfaces/event.repository.interface';
 import { IEventAuditRepository } from '../../domain/interfaces/event-audit.repository.interface';
 import { IEventBookingConfigRepository } from '../../domain/interfaces/event-booking-config.repository.interface';

@@ -1,4 +1,4 @@
-// Auth service - register, login, logout, refresh with bcrypt + JWT + session storage
+// Auth service: Handles registration, login, logout, and token refresh
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';

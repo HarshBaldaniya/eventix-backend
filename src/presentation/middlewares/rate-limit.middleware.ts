@@ -1,13 +1,12 @@
-// Rate limit middleware - uses API_RATE_LIMIT_WINDOW_MS and API_RATE_LIMIT_MAX_REQUESTS from env
+// Rate limit middleware: Uses API_RATE_LIMIT_WINDOW_MS and API_RATE_LIMIT_MAX_REQUESTS from env
 // Applies to all /api/v1/* routes except /health (for load balancer probes)
-// Must be created at app init - ensure loadAndValidateConfig() runs before importing app (e.g. in vitest.setup)
 import { rateLimit } from 'express-rate-limit';
 import type { Request, Response } from 'express';
 import { getConfig } from '../../infrastructure/config/config.loader';
 import { EVB429001 } from '../../shared/constants/error-code.constants';
 import { STATUS_CODE_TOO_MANY_REQUESTS } from '../../shared/constants/status-code.constants';
 
-/** Builds the 429 response body - exported for unit tests */
+// Builds the 429 response body - exported for unit tests
 export function createRateLimitResponseBody(windowMs: number, max: number) {
   return {
     success: false,
@@ -22,14 +21,16 @@ export function createRateLimitResponseBody(windowMs: number, max: number) {
   };
 }
 
-/** Skip logic - exported for unit tests */
+// Skip logic - exported for unit tests
 export function shouldSkipRateLimit(req: Request, nodeEnv: string): boolean {
-  if (nodeEnv === 'test') return true;
+  const testHeader = req.headers?.['x-test-rate-limit'];
+  if (nodeEnv === 'test' && !testHeader) return true;
+  if (testHeader) return false;
   const path = (req.path || req.originalUrl || '').replace(/\/$/, '');
   return path === '/health' || path.endsWith('/health');
 }
 
-/** Creates rate limit handler that sends our standard 429 envelope */
+// Creates rate limit handler that sends our standard 429 envelope
 export function createRateLimitHandler(windowMs: number, max: number) {
   return (_req: Request, res: Response) => {
     res.status(STATUS_CODE_TOO_MANY_REQUESTS).json(createRateLimitResponseBody(windowMs, max));

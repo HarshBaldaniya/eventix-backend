@@ -1,40 +1,52 @@
-// Application logger with labels for consistent log structure
+import winston from 'winston';
 
-import { LOG_LABEL } from '../constants/log-label.constants';
+const { combine, timestamp, printf, colorize } = winston.format;
 
-type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+const customFormat = printf(({ level, message, label, timestamp, ...metadata }) => {
+  let msg = `${timestamp} [${level}]`;
+  if (label) msg += ` [${label}]`;
+  msg += `: ${message}`;
+  if (Object.keys(metadata).length > 0) {
+    if (metadata.err && metadata.err instanceof Error) {
+      msg += `\n${metadata.err.stack || metadata.err.message}`;
+      delete metadata.err;
+    }
+    if (Object.keys(metadata).length > 0) {
+      msg += ` ${JSON.stringify(metadata)}`;
+    }
+  }
+  return msg;
+});
 
-interface LogPayload {
-  label: string;
-  msg: string;
-  [key: string]: unknown;
-}
+// Internal winston instance: Provides basic visibility for startup and critical errors
+const internalLogger = winston.createLogger({
+  level: process.env.NODE_ENV === 'prod' ? 'info' : 'debug',
+  format: combine(
+    colorize(),
+    timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    customFormat
+  ),
+  transports: [
+    new winston.transports.Console()
+  ],
+});
 
-function formatLog(level: LogLevel, payload: LogPayload): void {
-  const timestamp = new Date().toISOString();
-  const { label, msg, ...rest } = payload;
-  const logEntry = {
-    [LOG_LABEL.TIMESTAMP]: timestamp,
-    [LOG_LABEL.LEVEL]: level,
-    [LOG_LABEL.LABEL]: label,
-    [LOG_LABEL.MESSAGE]: msg,
-    ...(Object.keys(rest).length > 0 ? { [LOG_LABEL.PAYLOAD]: rest } : {}),
-  };
-  const output = JSON.stringify(logEntry);
-  console[level](output);
-}
-
+// Application logger exported for the rest of the application
 export const appLogger = {
-  error(payload: LogPayload): void {
-    formatLog('error', payload);
+  info: (payload: { msg: string; label?: string;[key: string]: any }) => {
+    const { msg, ...meta } = payload;
+    internalLogger.info(msg, meta);
   },
-  warn(payload: LogPayload): void {
-    formatLog('warn', payload);
+  error: (payload: { msg: string; label?: string; err?: any;[key: string]: any }) => {
+    const { msg, ...meta } = payload;
+    internalLogger.error(msg, meta);
   },
-  info(payload: LogPayload): void {
-    formatLog('info', payload);
+  warn: (payload: { msg: string; label?: string;[key: string]: any }) => {
+    const { msg, ...meta } = payload;
+    internalLogger.warn(msg, meta);
   },
-  debug(payload: LogPayload): void {
-    formatLog('debug', payload);
-  },
+  debug: (payload: { msg: string; label?: string;[key: string]: any }) => {
+    const { msg, ...meta } = payload;
+    internalLogger.debug(msg, meta);
+  }
 };

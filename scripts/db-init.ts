@@ -1,4 +1,4 @@
-// Runs DDL scripts in order - use: npm run db:init
+// Database initialization script: Bootstraps schema and tables
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { config as loadEnv } from 'dotenv';
@@ -30,6 +30,7 @@ async function main(): Promise<void> {
     user: DB_USER,
     password: DB_PASSWORD,
   });
+
   if (isCreateDb) {
     try {
       await adminPool.query(firstLine);
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
     user: DB_USER,
     password: DB_PASSWORD,
   });
+
   await pool.query(schemaSql);
   console.log(`Ran ${SCHEMA_FILE}`);
   await pool.end();

@@ -18,8 +18,9 @@ function createMocks() {
   };
 
   const eventAuditRepo = { insert: vi.fn() };
+  const bookingConfigRepo = { getForEvent: vi.fn() };
 
-  return { transactionManager, eventRepo, eventAuditRepo };
+  return { transactionManager, eventRepo, eventAuditRepo, bookingConfigRepo };
 }
 
 const mockEvent = {
@@ -40,10 +41,12 @@ describe('EventService', () => {
   beforeEach(() => {
     mocks = createMocks();
     mocks.eventAuditRepo.insert.mockResolvedValue(undefined);
+    mocks.bookingConfigRepo.getForEvent.mockResolvedValue({ max_tickets_per_booking: 6 });
     service = new EventService(
       mocks.eventRepo as never,
       mocks.eventAuditRepo as never,
-      mocks.transactionManager as never
+      mocks.transactionManager as never,
+      mocks.bookingConfigRepo as never
     );
   });
 
@@ -53,7 +56,7 @@ describe('EventService', () => {
         events: [mockEvent],
         total: 1,
       });
-      const result = await service.listEvents({ page: 1, limit: 10 });
+      const result = await service.listEvents({ page: 1, limit: 10, sort_by: 'created_at', order: 'desc' });
       expect(result.events).toHaveLength(1);
       expect(result.events[0].name).toBe('Test Event');
       expect(result.pagination.page).toBe(1);
@@ -62,7 +65,7 @@ describe('EventService', () => {
 
     it('filters by public statuses when not admin', async () => {
       mocks.eventRepo.findAll.mockResolvedValue({ events: [], total: 0 });
-      await service.listEvents({ page: 1, limit: 10 });
+      await service.listEvents({ page: 1, limit: 10, sort_by: 'created_at', order: 'desc' });
       expect(mocks.eventRepo.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ statuses: ['published', 'coming_soon'] })
       );
@@ -95,7 +98,7 @@ describe('EventService', () => {
     it('creates event and returns dto', async () => {
       mocks.eventRepo.createWithClient.mockResolvedValue(mockEvent);
       const result = await service.createEvent(
-        { name: 'New Event', description: 'Desc', capacity: 50 },
+        { name: 'New Event', description: 'Desc', capacity: 50, status: 'published' },
         1
       );
       expect(result.name).toBe('Test Event');

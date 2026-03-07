@@ -1,6 +1,7 @@
 // Entry point - validates config first, then loads app (rate-limit middleware needs config)
 import { loadAndValidateConfig } from './infrastructure/config/config.loader';
 import { getPostgresPool, closePostgresPool } from './infrastructure/database/postgres.client';
+import { getRedisClient, closeRedisConnection } from './infrastructure/database/redis.client';
 import { appLogger } from './shared/logger/app.logger';
 import { LOG_LABEL } from './shared/constants/log-label.constants';
 
@@ -10,6 +11,7 @@ async function bootstrap(): Promise<void> {
   const config = loadAndValidateConfig();
   const { app } = await import('./app');
   let dbStatus = 'unknown';
+  let redisStatus = 'unknown';
   try {
     const pool = await getPostgresPool();
     await pool.query('SELECT 1');
@@ -17,18 +19,27 @@ async function bootstrap(): Promise<void> {
   } catch {
     dbStatus = 'disconnected';
   }
+  try {
+    const redis = getRedisClient();
+    await redis.ping();
+    redisStatus = 'connected';
+  } catch {
+    redisStatus = 'disconnected';
+  }
   const server = app.listen(config.PORT, () => {
     appLogger.info({
       label: logLabel,
-      msg: `Server started | env=${config.NODE_ENV} port=${config.PORT} db=${dbStatus}`,
+      msg: `Server started | env=${config.NODE_ENV} port=${config.PORT} db=${dbStatus} redis=${redisStatus}`,
     });
   });
   process.on('SIGTERM', async () => {
     appLogger.info({ label: logLabel, msg: 'SIGTERM received, shutting down' });
     server.close();
     await closePostgresPool();
+    await closeRedisConnection();
     process.exit(0);
   });
 }
+
 
 bootstrap();

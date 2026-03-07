@@ -10,6 +10,6 @@ const healthRepo = new HealthRepository();
 const healthService = new HealthService(healthRepo);
 const healthController = new HealthController(healthService);
 
-router.get('/', asyncHandler(healthController.getHealth));
+router.get('/', healthController.checkHealth);
 
 export const healthRoutes = router;

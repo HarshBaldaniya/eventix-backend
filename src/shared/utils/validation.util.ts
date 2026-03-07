@@ -1,22 +1,19 @@
-// Reusable Zod validation - Single Responsibility: parse or throw AppError
-import type { ZodType, ZodError } from 'zod';
+// Validation utility: Reusable wrapper for Zod schemas with standard AppError reporting
+import { z } from 'zod';
 import { AppError } from '../errors/app.error';
 import { STATUS_CODE_BAD_REQUEST } from '../constants/status-code.constants';
 import { EVB400001 } from '../constants/error-code.constants';
 
-function formatZodDetails(error: ZodError): Record<string, string> {
-  const details: Record<string, string> = {};
-  error.errors.forEach((e) => {
-    const path = e.path.join('.') || 'body';
-    if (!details[path]) details[path] = e.message;
-  });
-  return details;
+export function validateRequest<T extends z.ZodTypeAny>(schema: T, data: unknown): z.infer<T> {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    const errors = result.error.flatten().fieldErrors;
+    const msg = Object.entries(errors)
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+      .join('; ');
+    throw new AppError(`Validation failed: ${msg}`, STATUS_CODE_BAD_REQUEST, EVB400001, { validation_errors: errors });
+  }
+  return result.data;
 }
 
-// Parses data with Zod schema. Returns typed result or throws AppError with validation details.
-export function parseOrThrow<T>(schema: ZodType<T, any, any>, data: unknown): T {
-  const result = schema.safeParse(data);
-  if (result.success) return result.data;
-  const details = formatZodDetails(result.error);
-  throw new AppError('Validation failed', STATUS_CODE_BAD_REQUEST, EVB400001, details);
-}
+export const parseOrThrow = validateRequest;

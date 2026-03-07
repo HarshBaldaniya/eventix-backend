@@ -1,19 +1,17 @@
-// Health service - orchestrates health check use case
+// Health service: Checks connection status for PostgreSQL and Redis infrastructure
 import { IHealthRepository } from '../../domain/interfaces/health.repository.interface';
-import { appLogger } from '../../shared/logger/app.logger';
-import { LOG_LABEL } from '../../shared/constants/log-label.constants';
-
-const logLabel = LOG_LABEL.APPLICATION;
 
 export class HealthService {
-  constructor(private readonly healthRepo: IHealthRepository) {}
+  constructor(private readonly healthRepo: IHealthRepository) { }
 
-  async getHealth(): Promise<{ status: string; db: string }> {
-    appLogger.info({ label: logLabel, msg: 'Health check requested' });
-    const dbOk = await this.healthRepo.checkDbConnection();
+  async checkHealth(): Promise<{ status: string; db: string; redis: string }> {
+    const isDbAlive = await this.healthRepo.checkDb();
+    const isRedisAlive = await this.healthRepo.checkRedis();
+    const allOk = isDbAlive && isRedisAlive;
     return {
-      status: 'ok',
-      db: dbOk ? 'connected' : 'disconnected',
+      status: allOk ? 'ok' : 'error',
+      db: isDbAlive ? 'connected' : 'disconnected',
+      redis: isRedisAlive ? 'connected' : 'disconnected',
     };
   }
 }
