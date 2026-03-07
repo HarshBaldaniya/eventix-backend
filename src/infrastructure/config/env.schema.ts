@@ -11,6 +11,7 @@ export const envSchema = z.object({
   DB_PASSWORD: z.string(),
   DB_POOL_MAX: z.string().transform(Number).pipe(z.number().min(1).max(100)).default('20'),
   DB_SSL: z.string().transform((s) => s === 'true').default('false'),
+  CORS_ORIGINS: z.string().default('http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002'),
   API_RATE_LIMIT_WINDOW_MS: z.string().transform(Number).pipe(z.number().min(1000)).default('60000'),
   API_RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).pipe(z.number().min(1)).default('100'),
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),

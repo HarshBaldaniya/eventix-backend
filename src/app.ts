@@ -7,17 +7,12 @@ import { requestIdMiddleware } from './presentation/middlewares/request-id.middl
 import { rateLimitMiddleware } from './presentation/middlewares/rate-limit.middleware';
 import { apiConstants } from './shared/constants/api.constants';
 import { STATUS_CODE_NOT_FOUND } from './shared/constants/status-code.constants';
+import { getConfig } from './infrastructure/config/config.loader';
 import { EVB404001 } from './shared/constants/error-code.constants';
 
 const app = express();
 app.use(cors({
-  origin: [
-    'http://localhost:3001',
-    'http://localhost:3002',
-    'http://127.0.0.1:3001',
-    'http://127.0.0.1:3002',
-    'https://eventix-frontend.vercel.app',
-  ],
+  origin: getConfig().CORS_ORIGINS.split(',').map((o: string) => o.trim()),
   credentials: true,
 }));
 app.use(express.json());
