@@ -1,0 +1,947 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Eventix API",
+    "description": "Eventix Event Booking System - Session-based auth, events, bookings, audit log. Import this file into Apifox or ApiDog for full API documentation.",
+    "version": "1.1.0",
+    "contact": {
+      "name": "Eventix API Support"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    { "name": "Eventix API / Health", "description": "API and database health checks" },
+    { "name": "Eventix API / Auth", "description": "Registration, login, logout, token refresh" },
+    { "name": "Eventix API / Events", "description": "Event listing, creation, updates" },
+    { "name": "Eventix API / Bookings", "description": "Book spots, list, cancel bookings" },
+    { "name": "Eventix API / Audit Log", "description": "View audit log entries" }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "Eventix API",
+      "tags": [
+        "Eventix API / Health",
+        "Eventix API / Auth",
+        "Eventix API / Events",
+        "Eventix API / Bookings",
+        "Eventix API / Audit Log"
+      ]
+    }
+  ],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": ["Eventix API / Health"],
+        "summary": "Get Health",
+        "description": "Check API and database connectivity status.",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "db": { "type": "string", "example": "connected" }
+                  }
+                },
+                "example": {
+                  "status": "ok",
+                  "db": "connected"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "code": "EVB503001",
+                    "message": "Database unavailable",
+                    "details": null
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": ["Eventix API / Auth"],
+        "summary": "Register",
+        "description": "Register a new user. Returns access and refresh tokens. Role is always 'user' (admin cannot self-register).",
+        "operationId": "register",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "user@example.com" },
+                  "password": { "type": "string", "minLength": 8, "example": "SecureP@ss123" },
+                  "name": { "type": "string", "example": "John Doe" },
+                  "role": { "type": "string", "enum": ["user"], "default": "user", "example": "user" }
+                }
+              },
+              "example": {
+                "email": "user@example.com",
+                "password": "SecureP@ss123",
+                "name": "John Doe"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/AuthResponse" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "user": { "id": 1, "email": "user@example.com", "name": "John Doe" },
+                    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "expires_in": 3600
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "code": "EVB400001",
+                    "message": "Validation failed",
+                    "details": { "email": "Invalid email format", "password": "Password must be at least 8 characters" }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "code": "EVB409003",
+                    "message": "Email already registered",
+                    "details": { "email": "user@example.com" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": ["Eventix API / Auth"],
+        "summary": "Login",
+        "description": "Authenticate user and receive access and refresh tokens. Creates a session for logout/refresh.",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "user@example.com" },
+                  "password": { "type": "string", "example": "SecureP@ss123" }
+                }
+              },
+              "example": {
+                "email": "user@example.com",
+                "password": "SecureP@ss123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/AuthResponse" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "user": { "id": 1, "email": "user@example.com", "name": "John Doe" },
+                    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "expires_in": 3600
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "code": "EVB401001",
+                    "message": "Invalid email or password",
+                    "details": null
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": ["Eventix API / Auth"],
+        "summary": "Logout",
+        "description": "Invalidate the current session. Send refresh_token in body. Marks the session as inactive (soft logout) for audit trail.",
+        "operationId": "logout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["refresh_token"],
+                "properties": {
+                  "refresh_token": { "type": "string", "description": "JWT refresh token to invalidate" }
+                }
+              },
+              "example": {
+                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logged out successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "object",
+                      "properties": { "message": { "type": "string", "example": "Logged out" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": ["Eventix API / Auth"],
+        "summary": "Refresh Token",
+        "description": "Exchange refresh token for new access and refresh tokens. Session must be active and not expired.",
+        "operationId": "refresh",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["refresh_token"],
+                "properties": {
+                  "refresh_token": { "type": "string" }
+                }
+              },
+              "example": {
+                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tokens refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/AuthResponse" }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired refresh token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "code": "EVB401001",
+                    "message": "Session expired or invalid",
+                    "details": null
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": ["Eventix API / Events"],
+        "summary": "List Events",
+        "description": "List events with pagination. Optional search by name/description. Public: shows published and coming_soon. Authenticated admin (optional Bearer): shows all statuses including draft.",
+        "operationId": "listEvents",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 }, "description": "Page number" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 }, "description": "Items per page (max 100)" },
+          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Search in name/description" },
+          { "name": "sort_by", "in": "query", "schema": { "type": "string", "enum": ["created_at", "name", "remaining_spots"], "default": "created_at" }, "description": "Sort field" },
+          { "name": "order", "in": "query", "schema": { "type": "string", "enum": ["asc", "desc"], "default": "desc" }, "description": "Sort order" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Event" }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": [
+                    {
+                      "id": 1,
+                      "name": "Summer Concert 2025",
+                      "description": "Annual summer concert",
+                      "capacity": 100,
+                      "booked_count": 25,
+                      "remaining_spots": 75,
+                      "status": "published",
+                      "created_at": "2025-03-01T10:00:00.000Z"
+                    }
+                  ],
+                  "pagination": {
+                    "page": 1,
+                    "limit": 10,
+                    "total": 1,
+                    "total_pages": 1,
+                    "has_next": false,
+                    "has_prev": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Eventix API / Events"],
+        "summary": "Create Event",
+        "description": "Create a new event. Requires admin role. Default status is draft.",
+        "operationId": "createEvent",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "capacity"],
+                "properties": {
+                  "name": { "type": "string", "maxLength": 255, "example": "Summer Concert 2025" },
+                  "description": { "type": "string", "nullable": true, "maxLength": 2000, "example": "Annual summer concert at the park" },
+                  "capacity": { "type": "integer", "minimum": 1, "example": 100 },
+                  "status": { "type": "string", "enum": ["draft", "coming_soon", "published", "cancelled", "completed"], "default": "draft" }
+                }
+              },
+              "example": {
+                "name": "Summer Concert 2025",
+                "description": "Annual summer concert at the park",
+                "capacity": 100,
+                "status": "draft"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Event created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/Event" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/events/{eventId}": {
+      "get": {
+        "tags": ["Eventix API / Events"],
+        "summary": "Get Event by ID",
+        "description": "Get a single event by ID. Public: only published and coming_soon. Authenticated admin (optional Bearer): all statuses.",
+        "operationId": "getEventById",
+        "parameters": [
+          { "name": "eventId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/Event" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid event ID", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": {
+            "description": "Event not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "success": false,
+                  "error": { "code": "EVB404001", "message": "Event not found", "details": { "event_id": 999 } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Eventix API / Events"],
+        "summary": "Update Event",
+        "description": "Update an event. Requires admin role. Capacity must be >= booked_count.",
+        "operationId": "updateEvent",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "eventId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "maxLength": 255 },
+                  "description": { "type": "string", "nullable": true },
+                  "capacity": { "type": "integer", "minimum": 1 },
+                  "status": { "type": "string", "enum": ["draft", "coming_soon", "published", "cancelled", "completed"] }
+                }
+              },
+              "example": {
+                "name": "Summer Concert 2025 (Updated)",
+                "description": "Updated description",
+                "capacity": 120,
+                "status": "published"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/Event" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "Event not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/events/{eventId}/bookings": {
+      "post": {
+        "tags": ["Eventix API / Bookings"],
+        "summary": "Book Tickets",
+        "description": "Book tickets for an event. Event must be published. Limits: max_tickets_per_booking = max per single request (prevents grabbing 50 at once); max_tickets_per_user = total tickets user can have for this event (user may need multiple requests to reach it). Default config: 10 per booking, 10 per user. Per-event overrides in event_booking_config.",
+        "operationId": "bookSpot",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "eventId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ticket_count": { "type": "integer", "minimum": 1, "maximum": 100, "default": 1, "description": "Number of tickets to book (1-100, subject to event config)" }
+                },
+                "example": { "ticket_count": 2 }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Booking created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/Booking" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "id": 1,
+                    "event_id": 1,
+                    "user_id": 1,
+                    "ticket_count": 2,
+                    "status": "confirmed",
+                    "created_at": "2025-03-06T10:00:00.000Z",
+                    "updated_at": "2025-03-06T10:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (invalid event ID or ticket_count)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB400001", "message": "Validation failed", "details": { "ticket_count": "Number must be less than or equal to 100" } } }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB401001", "message": "Authentication required", "details": null } }
+              }
+            }
+          },
+          "404": {
+            "description": "Event not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB404001", "message": "Event not found", "details": { "event_id": 999 } } }
+              }
+            }
+          },
+          "409": {
+            "description": "Event sold out, not enough spots, or booking limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "soldOut": {
+                    "summary": "Sold out",
+                    "value": { "success": false, "error": { "code": "EVB409001", "message": "This event is sold out", "details": { "event_id": 1 } } }
+                  },
+                  "notEnoughSpots": {
+                    "summary": "Not enough spots",
+                    "value": { "success": false, "error": { "code": "EVB409001", "message": "Not enough spots available", "details": { "event_id": 1, "requested": 5, "remaining": 2 } } }
+                  },
+                  "limitExceeded": {
+                    "summary": "Booking limit exceeded",
+                    "value": { "success": false, "error": { "code": "EVB409003", "message": "You can book at most 10 tickets for this event (you have 8)", "details": { "max_tickets_per_user": 10, "current": 8 } } }
+                  },
+                  "perBookingLimit": {
+                    "summary": "Per-booking limit exceeded",
+                    "value": { "success": false, "error": { "code": "EVB409003", "message": "Cannot book more than 10 tickets per booking", "details": { "max_tickets_per_booking": 10 } } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bookings": {
+      "get": {
+        "tags": ["Eventix API / Bookings"],
+        "summary": "List Bookings",
+        "description": "List bookings. User: own bookings only. Admin: all bookings.",
+        "operationId": "listBookings",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 }, "description": "Page number" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 }, "description": "Items per page (max 100)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of bookings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Booking" }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/bookings/{bookingId}": {
+      "get": {
+        "tags": ["Eventix API / Bookings"],
+        "summary": "Get Booking by ID",
+        "description": "Get a booking by ID. User: own only. Admin: any.",
+        "operationId": "getBookingById",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "bookingId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/Booking" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB403001", "message": "You do not have permission to perform this action", "details": null } }
+              }
+            }
+          },
+          "404": {
+            "description": "Booking not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB404001", "message": "Booking not found", "details": { "booking_id": 999 } } }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Eventix API / Bookings"],
+        "summary": "Cancel Booking",
+        "description": "Cancel a booking. Accepts empty body or { status: 'cancelled' }.",
+        "operationId": "cancelBooking",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "bookingId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": { "type": "string", "enum": ["cancelled"], "example": "cancelled" }
+                }
+              },
+              "example": { "status": "cancelled" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Booking cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/Booking" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "Booking not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": {
+            "description": "Booking already cancelled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB422001", "message": "Booking is already cancelled", "details": { "booking_id": 1 } } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit-log": {
+      "get": {
+        "tags": ["Eventix API / Audit Log"],
+        "summary": "List Audit Log",
+        "description": "List audit log entries. Requires admin role.",
+        "operationId": "listAuditLog",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of audit log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AuditLogEntry" }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": [
+                    {
+                      "id": 1,
+                      "operation": "book",
+                      "resource_type": "booking",
+                      "event_id": 1,
+                      "booking_id": 1,
+                      "user_id": 1,
+                      "outcome": "success",
+                      "timestamp": "2025-03-06T10:00:00.000Z"
+                    }
+                  ],
+                  "pagination": { "page": 1, "limit": 10, "total": 1, "total_pages": 1, "has_next": false, "has_prev": false }
+                }
+              }
+            }
+          },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB403001", "message": "You do not have permission to perform this action", "details": null } }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT access token from login or register"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string", "example": "EVB400001" },
+              "message": { "type": "string", "example": "Validation failed" },
+              "details": { "type": "object", "nullable": true }
+            }
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "email": { "type": "string" },
+              "name": { "type": "string", "nullable": true }
+            }
+          },
+          "access_token": { "type": "string" },
+          "refresh_token": { "type": "string" },
+          "expires_in": { "type": "integer", "description": "Access token expiry in seconds" }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "capacity": { "type": "integer" },
+          "booked_count": { "type": "integer" },
+          "remaining_spots": { "type": "integer" },
+          "status": { "type": "string", "enum": ["draft", "coming_soon", "published", "cancelled", "completed"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Booking": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "event_id": { "type": "integer" },
+          "user_id": { "type": "integer" },
+          "ticket_count": { "type": "integer", "description": "Number of tickets in this booking" },
+          "status": { "type": "string", "enum": ["confirmed", "cancelled"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "EventBookingConfig": {
+        "type": "object",
+        "description": "Per-event or default config. max_tickets_per_booking = max per single request (prevents grabbing many at once); max_tickets_per_user = total tickets user can have for this event across all bookings.",
+        "properties": {
+          "max_tickets_per_booking": { "type": "integer", "description": "Max tickets per single POST request" },
+          "max_tickets_per_user": { "type": "integer", "description": "Max total tickets user can have for this event" }
+        }
+      },
+      "AuditLogEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "operation": { "type": "string", "enum": ["create", "update", "delete", "fetch", "book", "cancel"] },
+          "resource_type": { "type": "string", "nullable": true, "enum": ["event", "booking"] },
+          "event_id": { "type": "integer", "nullable": true },
+          "booking_id": { "type": "integer", "nullable": true },
+          "user_id": { "type": "integer", "nullable": true },
+          "outcome": { "type": "string", "enum": ["success", "failure"] },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer" },
+          "total_pages": { "type": "integer" },
+          "has_next": { "type": "boolean" },
+          "has_prev": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

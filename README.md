@@ -13,13 +13,11 @@ src/
 └── presentation/   # Controllers, middlewares, routes
 ```
 
-## Security (3 Levels)
+## Security
 
 | Level | Location | Purpose |
 |-------|----------|---------|
-| Route | `presentation/middlewares/route.security.ts` | Path validation, rate limit |
-| API   | `presentation/middlewares/api.security.ts`   | API key, auth token |
-| DB    | `shared/security/db.security.ts`            | Parameterized queries, pool |
+| DB    | `shared/security/db.security.ts` | Parameterized queries, pool |
 
 ## Commands
 

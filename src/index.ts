@@ -1,6 +1,5 @@
-// Entry point - validates config first, then starts app
+// Entry point - validates config first, then loads app (rate-limit middleware needs config)
 import { loadAndValidateConfig } from './infrastructure/config/config.loader';
-import { app } from './app';
 import { getPostgresPool, closePostgresPool } from './infrastructure/database/postgres.client';
 import { appLogger } from './shared/logger/app.logger';
 import { LOG_LABEL } from './shared/constants/log-label.constants';
@@ -9,6 +8,7 @@ const logLabel = LOG_LABEL.APPLICATION;
 
 async function bootstrap(): Promise<void> {
   const config = loadAndValidateConfig();
+  const { app } = await import('./app');
   let dbStatus = 'unknown';
   try {
     const pool = await getPostgresPool();
