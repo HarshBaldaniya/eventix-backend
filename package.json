@@ -15,6 +15,8 @@
     "start:stg": "cross-env NODE_ENV=stg node dist/index.js",
     "start:prod": "cross-env NODE_ENV=prod node dist/index.js",
     "db:init": "cross-env NODE_ENV=dev ts-node scripts/db-init.ts",
+    "db:seed": "cross-env NODE_ENV=dev ts-node scripts/db-seed.ts",
+    "db:seed:down": "cross-env NODE_ENV=dev ts-node scripts/db-seed-down.ts",
     "test:api": "cross-env NODE_ENV=test vitest run tests/api/ && cross-env NODE_ENV=test REPORT_TYPE=api ts-node scripts/generate-test-report.ts",
     "test:unit": "cross-env NODE_ENV=test vitest run tests/unit/ && cross-env NODE_ENV=test REPORT_TYPE=unit ts-node scripts/generate-test-report.ts",
     "test:integration": "cross-env NODE_ENV=test vitest run tests/integration/ && cross-env NODE_ENV=test REPORT_TYPE=integration ts-node scripts/generate-test-report.ts",

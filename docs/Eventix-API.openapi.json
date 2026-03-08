@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Eventix API",
-    "description": "Eventix Event Booking System - Session-based auth, events, bookings, audit log. Import this file into Apifox or ApiDog for full API documentation.",
-    "version": "1.1.0",
+    "description": "Eventix Event Booking System — REST API for event management, ticket booking, and audit logging.\n\n## Authentication\n- **JWT Bearer:** Most endpoints require `Authorization: Bearer <access_token>` from login/register.\n- **Public:** Health, list events (published/coming_soon), get event by ID.\n- **Admin only:** Create/update events, list audit log.\n\n## Rate Limiting\n- Default: 100 requests per minute per IP (configurable via `API_RATE_LIMIT_*`).\n- 429 response when exceeded.\n\n## Error Format\nAll errors return `{ success: false, error: { code, message, details } }`.",
+    "version": "1.2.0",
     "contact": {
       "name": "Eventix API Support"
     }
@@ -37,12 +37,12 @@
     "/api/v1/health": {
       "get": {
         "tags": ["Eventix API / Health"],
-        "summary": "Get Health",
-        "description": "Check API and database connectivity status.",
+        "summary": "Health Check",
+        "description": "Returns API and PostgreSQL connectivity status. Use for load balancer health checks, monitoring, and startup probes. No authentication required.",
         "operationId": "getHealth",
         "responses": {
           "200": {
-            "description": "Health status",
+            "description": "Service healthy. DB connected.",
             "content": {
               "application/json": {
                 "schema": {
@@ -60,7 +60,7 @@
             }
           },
           "503": {
-            "description": "Service unavailable",
+            "description": "Service unhealthy. Database unreachable.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
@@ -82,7 +82,7 @@
       "post": {
         "tags": ["Eventix API / Auth"],
         "summary": "Register",
-        "description": "Register a new user. Returns access and refresh tokens. Role is always 'user' (admin cannot self-register).",
+        "description": "Register a new user. Returns access and refresh tokens. Creates a session for logout/refresh. Role is always `user` (admin cannot self-register). Password must be at least 8 characters.",
         "operationId": "register",
         "requestBody": {
           "required": true,
@@ -146,6 +146,15 @@
               }
             }
           },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB429001", "message": "Too many requests", "details": null } }
+              }
+            }
+          },
           "409": {
             "description": "Email already registered",
             "content": {
@@ -169,7 +178,7 @@
       "post": {
         "tags": ["Eventix API / Auth"],
         "summary": "Login",
-        "description": "Authenticate user and receive access and refresh tokens. Creates a session for logout/refresh.",
+        "description": "Authenticate with email and password. Returns access token (short-lived) and refresh token (long-lived). Creates a session for logout/refresh. Invalid credentials return 401.",
         "operationId": "login",
         "requestBody": {
           "required": true,
@@ -229,6 +238,15 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB429001", "message": "Too many requests", "details": null } }
+              }
+            }
           }
         }
       }
@@ -237,7 +255,7 @@
       "post": {
         "tags": ["Eventix API / Auth"],
         "summary": "Logout",
-        "description": "Invalidate the current session. Send refresh_token in body. Marks the session as inactive (soft logout) for audit trail.",
+        "description": "Invalidate the session by sending the refresh token. Marks the session as inactive (soft delete). Does not require Bearer token.",
         "operationId": "logout",
         "requestBody": {
           "required": true,
@@ -289,7 +307,7 @@
       "post": {
         "tags": ["Eventix API / Auth"],
         "summary": "Refresh Token",
-        "description": "Exchange refresh token for new access and refresh tokens. Session must be active and not expired.",
+        "description": "Exchange a valid refresh token for new access and refresh tokens. Session must be active and not expired. Use when access token expires.",
         "operationId": "refresh",
         "requestBody": {
           "required": true,
@@ -346,12 +364,13 @@
       "get": {
         "tags": ["Eventix API / Events"],
         "summary": "List Events",
-        "description": "List events with pagination. Optional search by name/description. Public: shows published and coming_soon. Authenticated admin (optional Bearer): shows all statuses including draft.",
+        "description": "List events with pagination and filters. **Public (no auth):** returns only `published` and `coming_soon`. **Admin (Bearer token):** returns all statuses including `draft`, `cancelled`, `completed`. Search matches name and description. Sort by created_at, name, or remaining_spots.",
         "operationId": "listEvents",
         "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 }, "description": "Page number" },
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 }, "description": "Items per page (max 100)" },
-          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Search in name/description" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 }, "description": "Page number (1-based)" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 }, "description": "Items per page (max 100)" },
+          { "name": "search", "in": "query", "schema": { "type": "string", "maxLength": 200 }, "description": "Search in name and description (max 200 chars)" },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["draft", "coming_soon", "published", "cancelled", "completed"] }, "description": "Filter by status (admin only; ignored for public)" },
           { "name": "sort_by", "in": "query", "schema": { "type": "string", "enum": ["created_at", "name", "remaining_spots"], "default": "created_at" }, "description": "Sort field" },
           { "name": "order", "in": "query", "schema": { "type": "string", "enum": ["asc", "desc"], "default": "desc" }, "description": "Sort order" }
         ],
@@ -402,7 +421,7 @@
       "post": {
         "tags": ["Eventix API / Events"],
         "summary": "Create Event",
-        "description": "Create a new event. Requires admin role. Default status is draft.",
+        "description": "Create a new event. **Admin only.** Default status is `draft`. Name 1–255 chars; description optional, max 2000 chars; capacity must be ≥ 1. Event is created with booked_count=0.",
         "operationId": "createEvent",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
@@ -453,7 +472,7 @@
       "get": {
         "tags": ["Eventix API / Events"],
         "summary": "Get Event by ID",
-        "description": "Get a single event by ID. Public: only published and coming_soon. Authenticated admin (optional Bearer): all statuses.",
+        "description": "Get a single event by ID. **Public:** returns only `published` and `coming_soon` (404 for draft/cancelled/completed). **Admin (Bearer):** returns any status. Includes optional `max_tickets_per_booking` when per-event config exists.",
         "operationId": "getEventById",
         "parameters": [
           { "name": "eventId", "in": "path", "required": true, "schema": { "type": "integer" } }
@@ -491,7 +510,7 @@
       "patch": {
         "tags": ["Eventix API / Events"],
         "summary": "Update Event",
-        "description": "Update an event. Requires admin role. Capacity must be >= booked_count.",
+        "description": "Update an event. **Admin only.** All fields optional (partial update). New capacity must be ≥ current `booked_count`. Cannot reduce capacity below booked tickets.",
         "operationId": "updateEvent",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
@@ -544,7 +563,7 @@
       "post": {
         "tags": ["Eventix API / Bookings"],
         "summary": "Book Tickets",
-        "description": "Book tickets for an event. Event must be published. Limits: max_tickets_per_booking = max per single request (prevents grabbing 50 at once); max_tickets_per_user = total tickets user can have for this event (user may need multiple requests to reach it). Default config: 10 per booking, 10 per user. Per-event overrides in event_booking_config.",
+        "description": "Book tickets for a **published** event. **Auth required.** `ticket_count` (1–100) is validated against per-event config: **max_tickets_per_booking** (max per single request; default 6) and **max_tickets_per_user** (total across all bookings for this event; default 15). Per-event overrides in `event_booking_config`. Fails if sold out, not enough spots, or limits exceeded.",
         "operationId": "bookSpot",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
@@ -632,14 +651,23 @@
                     "value": { "success": false, "error": { "code": "EVB409001", "message": "Not enough spots available", "details": { "event_id": 1, "requested": 5, "remaining": 2 } } }
                   },
                   "limitExceeded": {
-                    "summary": "Booking limit exceeded",
-                    "value": { "success": false, "error": { "code": "EVB409003", "message": "You can book at most 10 tickets for this event (you have 8)", "details": { "max_tickets_per_user": 10, "current": 8 } } }
+                    "summary": "Per-user limit exceeded",
+                    "value": { "success": false, "error": { "code": "EVB409003", "message": "You can book at most 15 tickets for this event (you have 12)", "details": { "max_tickets_per_user": 15, "current": 12 } } }
                   },
                   "perBookingLimit": {
                     "summary": "Per-booking limit exceeded",
-                    "value": { "success": false, "error": { "code": "EVB409003", "message": "Cannot book more than 10 tickets per booking", "details": { "max_tickets_per_booking": 10 } } }
+                    "value": { "success": false, "error": { "code": "EVB409003", "message": "Cannot book more than 6 tickets per booking", "details": { "max_tickets_per_booking": 6 } } }
                   }
                 }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "success": false, "error": { "code": "EVB429001", "message": "Too many requests", "details": null } }
               }
             }
           }
@@ -650,7 +678,7 @@
       "get": {
         "tags": ["Eventix API / Bookings"],
         "summary": "List Bookings",
-        "description": "List bookings. User: own bookings only. Admin: all bookings.",
+        "description": "List bookings with pagination. **User:** own bookings only. **Admin:** all users' bookings. Returns confirmed and cancelled.",
         "operationId": "listBookings",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
@@ -684,7 +712,7 @@
       "get": {
         "tags": ["Eventix API / Bookings"],
         "summary": "Get Booking by ID",
-        "description": "Get a booking by ID. User: own only. Admin: any.",
+        "description": "Get a single booking by ID. **User:** own bookings only (403 for others). **Admin:** any booking.",
         "operationId": "getBookingById",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
@@ -729,7 +757,7 @@
       "patch": {
         "tags": ["Eventix API / Bookings"],
         "summary": "Cancel Booking",
-        "description": "Cancel a booking. Accepts empty body or { status: 'cancelled' }.",
+        "description": "Cancel a confirmed booking. **User:** own only. **Admin:** any. Body optional: `{}` or `{ status: 'cancelled' }`. Decrements event `booked_count`. Returns 422 if already cancelled.",
         "operationId": "cancelBooking",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
@@ -765,14 +793,9 @@
             }
           },
           "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "404": { "description": "Booking not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "400": { "description": "Validation failed (invalid body)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "422": {
             "description": "Booking already cancelled",
             "content": {
@@ -789,12 +812,18 @@
       "get": {
         "tags": ["Eventix API / Audit Log"],
         "summary": "List Audit Log",
-        "description": "List audit log entries. Requires admin role.",
+        "description": "List combined event and booking audit entries. **Admin only.** Tracks create/update/delete (events), book/cancel (bookings). Filter by resource type, event/booking ID, outcome, or date range.",
         "operationId": "listAuditLog",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 } }
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 }, "description": "Page number" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 }, "description": "Items per page (max 100)" },
+          { "name": "resource_type", "in": "query", "schema": { "type": "string", "enum": ["event", "booking"] }, "description": "Filter by resource type" },
+          { "name": "event_id", "in": "query", "schema": { "type": "integer", "minimum": 1 }, "description": "Filter by event ID" },
+          { "name": "booking_id", "in": "query", "schema": { "type": "integer", "minimum": 1 }, "description": "Filter by booking ID" },
+          { "name": "outcome", "in": "query", "schema": { "type": "string", "enum": ["success", "failure"] }, "description": "Filter by outcome" },
+          { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "Filter entries from this date (ISO 8601)" },
+          { "name": "date_to", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "Filter entries until this date (ISO 8601)" }
         ],
         "responses": {
           "200": {
@@ -817,13 +846,17 @@
                   "data": [
                     {
                       "id": 1,
-                      "operation": "book",
                       "resource_type": "booking",
+                      "operation": "book",
                       "event_id": 1,
                       "booking_id": 1,
                       "user_id": 1,
+                      "ticket_count": 2,
                       "outcome": "success",
-                      "timestamp": "2025-03-06T10:00:00.000Z"
+                      "details": null,
+                      "error_code": null,
+                      "error_message": null,
+                      "created_at": "2025-03-06T10:00:00.000Z"
                     }
                   ],
                   "pagination": { "page": 1, "limit": 10, "total": 1, "total_pages": 1, "has_next": false, "has_prev": false }
@@ -851,60 +884,66 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "JWT access token from login or register"
+        "description": "JWT access token from login or register. Header: Authorization: Bearer <token>"
       }
     },
     "schemas": {
       "ErrorResponse": {
         "type": "object",
+        "description": "Standard error response",
         "properties": {
           "success": { "type": "boolean", "example": false },
           "error": {
             "type": "object",
             "properties": {
-              "code": { "type": "string", "example": "EVB400001" },
+              "code": { "type": "string", "example": "EVB400001", "description": "EVB-prefixed error code" },
               "message": { "type": "string", "example": "Validation failed" },
-              "details": { "type": "object", "nullable": true }
+              "details": { "type": "object", "nullable": true, "description": "Field-level errors or context" }
             }
           }
         }
       },
       "AuthResponse": {
         "type": "object",
+        "description": "Auth response from register, login, or refresh",
         "properties": {
           "user": {
             "type": "object",
             "properties": {
               "id": { "type": "integer" },
               "email": { "type": "string" },
-              "name": { "type": "string", "nullable": true }
+              "name": { "type": "string", "nullable": true },
+              "role": { "type": "string", "enum": ["user", "admin"] }
             }
           },
-          "access_token": { "type": "string" },
-          "refresh_token": { "type": "string" },
+          "access_token": { "type": "string", "description": "JWT for Authorization header" },
+          "refresh_token": { "type": "string", "description": "Use for refresh or logout" },
           "expires_in": { "type": "integer", "description": "Access token expiry in seconds" }
         }
       },
       "Event": {
         "type": "object",
+        "description": "Event entity",
         "properties": {
           "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "description": { "type": "string", "nullable": true },
-          "capacity": { "type": "integer" },
-          "booked_count": { "type": "integer" },
-          "remaining_spots": { "type": "integer" },
+          "name": { "type": "string", "maxLength": 255 },
+          "description": { "type": "string", "nullable": true, "maxLength": 2000 },
+          "capacity": { "type": "integer", "minimum": 1 },
+          "booked_count": { "type": "integer", "minimum": 0 },
+          "remaining_spots": { "type": "integer", "description": "capacity - booked_count" },
           "status": { "type": "string", "enum": ["draft", "coming_soon", "published", "cancelled", "completed"] },
+          "max_tickets_per_booking": { "type": "integer", "description": "Per-event override; present when configured" },
           "created_at": { "type": "string", "format": "date-time" }
         }
       },
       "Booking": {
         "type": "object",
+        "description": "Booking entity",
         "properties": {
           "id": { "type": "integer" },
           "event_id": { "type": "integer" },
           "user_id": { "type": "integer" },
-          "ticket_count": { "type": "integer", "description": "Number of tickets in this booking" },
+          "ticket_count": { "type": "integer", "minimum": 1, "description": "Number of tickets in this booking" },
           "status": { "type": "string", "enum": ["confirmed", "cancelled"] },
           "created_at": { "type": "string", "format": "date-time" },
           "updated_at": { "type": "string", "format": "date-time" }
@@ -920,24 +959,30 @@
       },
       "AuditLogEntry": {
         "type": "object",
+        "description": "Combined event and booking audit log entry",
         "properties": {
-          "id": { "type": "integer" },
-          "operation": { "type": "string", "enum": ["create", "update", "delete", "fetch", "book", "cancel"] },
-          "resource_type": { "type": "string", "nullable": true, "enum": ["event", "booking"] },
-          "event_id": { "type": "integer", "nullable": true },
-          "booking_id": { "type": "integer", "nullable": true },
-          "user_id": { "type": "integer", "nullable": true },
+          "id": { "type": "integer", "description": "Audit log entry ID" },
+          "resource_type": { "type": "string", "enum": ["event", "booking"], "description": "event or booking" },
+          "operation": { "type": "string", "enum": ["create", "update", "delete", "fetch", "book", "cancel"], "description": "Operation performed" },
+          "event_id": { "type": "integer", "description": "Related event ID" },
+          "booking_id": { "type": "integer", "nullable": true, "description": "Related booking ID (null for event ops)" },
+          "user_id": { "type": "integer", "nullable": true, "description": "User who performed the action" },
+          "ticket_count": { "type": "integer", "nullable": true, "description": "Tickets booked/cancelled (for book/cancel)" },
           "outcome": { "type": "string", "enum": ["success", "failure"] },
-          "timestamp": { "type": "string", "format": "date-time" }
+          "details": { "type": "object", "nullable": true, "description": "Additional context" },
+          "error_code": { "type": "string", "nullable": true, "description": "Error code when outcome is failure" },
+          "error_message": { "type": "string", "nullable": true, "description": "Error message when outcome is failure" },
+          "created_at": { "type": "string", "format": "date-time", "description": "When the action occurred" }
         }
       },
       "Pagination": {
         "type": "object",
+        "description": "Pagination metadata for list endpoints",
         "properties": {
-          "page": { "type": "integer" },
-          "limit": { "type": "integer" },
-          "total": { "type": "integer" },
-          "total_pages": { "type": "integer" },
+          "page": { "type": "integer", "description": "Current page (1-based)" },
+          "limit": { "type": "integer", "description": "Items per page" },
+          "total": { "type": "integer", "description": "Total items" },
+          "total_pages": { "type": "integer", "description": "Total pages" },
           "has_next": { "type": "boolean" },
           "has_prev": { "type": "boolean" }
         }
