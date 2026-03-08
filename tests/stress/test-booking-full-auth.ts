@@ -1,16 +1,13 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import 'dotenv/config';
-import { loadAndValidateConfig } from '../../src/infrastructure/config/config.loader';
 import { config as loadEnv } from 'dotenv';
 
-// Initialize env and config
 loadEnv({ path: '.env.dev' });
+process.env.NODE_ENV = 'test';  // Force test env so rate limit is skipped
+import { loadAndValidateConfig } from '../../src/infrastructure/config/config.loader';
+
 loadAndValidateConfig();
 
 import { getPostgresPool } from '../../src/infrastructure/database/postgres.client';
 import { EVENT_QUERIES } from '../../src/infrastructure/database/queries/event.queries';
-import { getTestAgent } from '../helpers/test-app';
 import { authHeader } from '../helpers/auth-helper';
 import { getRedisClient, getEventSpotsKey } from '../../src/infrastructure/database/redis.client';
 import { saveCustomResult } from '../helpers/custom-reporter';
@@ -22,6 +19,7 @@ const TEST_PASSWORD = 'Password123';
 async function runTest() {
     console.log(`🚀 Starting Full-Auth Concurrency Test (${CONCURRENCY_COUNT} users vs ${TOTAL_SPOTS} spots)...`);
     const pool = await getPostgresPool();
+    const { getTestAgent } = await import('../helpers/test-app');
     const agent = getTestAgent();
     const startTime = Date.now();
 
@@ -66,12 +64,14 @@ async function runTest() {
                     body: res.body,
                     success: res.status === 201
                 }))
-                .catch(err => ({
-                    userIndex: index,
-                    status: err.status || 0,
-                    body: { error: err.message },
-                    success: false
-                }));
+                .catch((err: unknown) => {
+                    const e = err as { status?: number; response?: { status: number }; message?: string };
+                    const status = e?.response?.status ?? e?.status ?? 0;
+                    if (status !== 409 && status !== 429) {
+                        console.error(`[User ${index}] Unexpected error:`, status, err);
+                    }
+                    return { userIndex: index, status, body: { error: (e?.message ?? String(err)) }, success: false };
+                });
         });
 
         const responses = await Promise.all(burstPromises);
@@ -87,7 +87,13 @@ async function runTest() {
         console.log(`Total Requests: ${CONCURRENCY_COUNT}`);
         console.log(`Success (201): ${successCount} (Expected: ${TOTAL_SPOTS})`);
         console.log(`Conflict (409): ${conflictCount} (Expected: ${CONCURRENCY_COUNT - TOTAL_SPOTS})`);
-        if (otherFailures > 0) console.log(`Other Errors: ${otherFailures}`);
+        if (otherFailures > 0) {
+            const statusCounts = responses.filter(r => !r.success && r.status !== 409).reduce((acc, r) => {
+                acc[r.status] = (acc[r.status] || 0) + 1;
+                return acc;
+            }, {} as Record<number, number>);
+            console.log(`Other Errors: ${otherFailures}`, statusCounts);
+        }
 
         // 5. Final DB Verification
         const finalEvent = await pool.query('SELECT booked_count FROM events WHERE id = $1', [eventId]);

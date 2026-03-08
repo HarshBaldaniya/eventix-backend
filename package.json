@@ -24,6 +24,7 @@
     "test:rate-limit": "cross-env NODE_ENV=test ts-node --transpile-only tests/stress/test-rate-limiting.ts",
     "test:tokens": "cross-env NODE_ENV=test ts-node --transpile-only tests/scripts/generate-stress-tokens.ts",
     "test:mega-auth": "cross-env NODE_ENV=test ts-node --transpile-only tests/stress/test-booking-mega-auth.ts",
+    "test:mega-auth:real": "cross-env NODE_ENV=test ts-node --transpile-only tests/stress/test-booking-mega-auth-real.ts",
     "test:report": "ts-node --transpile-only scripts/generate-html-report.ts",
     "db:seed-stress": "cross-env NODE_ENV=test ts-node tests/scripts/seed-test-users.ts"
   },

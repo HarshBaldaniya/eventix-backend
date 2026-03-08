@@ -1,163 +1,265 @@
-# Eventix Testing Guide 🧪
+# Eventix Testing Guide
 
-This guide explains **what** we test in the Eventix project, **why** we test it, and **how** each script ensures our system can handle everything from simple logic to massive flash sales.
+Complete guide to testing in the Eventix project: unit, integration, API, stress, and security tests.
+
+---
+
+## Table of Contents
+
+1. [Standard Logic Tests (Vitest)](#1-standard-logic-tests-vitest)
+2. [Stress Tests](#2-stress-tests)
+3. [Mega-Auth: In-Process vs Real API](#3-mega-auth-in-process-vs-real-api)
+4. [Rate-Limit Security Test](#4-rate-limit-security-test)
+5. [Reporting](#5-reporting)
+6. [Workflow & Commands](#6-workflow--commands)
+7. [Request Flow & Concurrency](#7-request-flow--concurrency)
+8. [Common Errors](#8-common-errors)
+9. [Test Infrastructure](#9-test-infrastructure)
 
 ---
 
 ## 1. Standard Logic Tests (Vitest)
 
-These are used for daily development to ensure the core rules of the project are never broken.
-
-### 🧩 Unit Tests
-- **What is it?**: Testing a single piece of code (like a function) in isolation.
-- **Project Example**: Testing that the `BookingService` correctly rejects a request if the `ticket_count` (e.g., 20) is higher than the allowed `max_tickets_per_booking` (e.g., 6).
-- **Why?**: If we change the code for "Premium Tickets", we want to be 100% sure we didn't break the basic "Max Tickets" rule.
+### Unit Tests
+- **What**: Tests a single piece of code (e.g. a function) in isolation.
+- **Example**: `BookingService` rejects when `ticket_count` (20) exceeds `max_tickets_per_booking` (6).
+- **Why**: Ensures core rules are not broken when refactoring.
 - **Run**: `npm run test:unit`
 
-### 🔗 Integration Tests
-- **What is it?**: Testing how the code talks to the real Database.
-- **Project Example**: Verifying that calling `bookSpot()` actually creates a row in the `bookings` table and updates the `booked_count` in the `events` table correctly.
-- **Why?**: To ensure our SQL queries are correct and that data is saved safely.
+### Integration Tests
+- **What**: Tests how code interacts with the real database.
+- **Example**: `bookSpot()` creates a row in `bookings` and updates `events.booked_count`.
+- **Why**: Validates SQL queries and data integrity.
 - **Run**: `npm run test:integration`
 
-### 🌐 API Tests
-- **What is it?**: Testing the full HTTP "End-to-End" flow.
-- **Project Example**: Sending a real POST request to `/api/v1/auth/login` and checking if we get back a valid JWT access token.
-- **Run**: `npm run test:api` (or `npm run test:all` for everything)
+### API Tests
+- **What**: Full HTTP end-to-end flow.
+- **Example**: POST `/api/v1/auth/login` returns a valid JWT.
+- **Run**: `npm run test:api` or `npm run test:all`
 
 ---
 
-## 2. High-Traffic Stress Tests (`tests/stress/`)
+## 2. Stress Tests
 
-These are specialized tests designed to simulate "Flash Sale" scenarios where thousands of users compete for just a few spots. They are designed to prove our Redis architecture and Database transaction locks work perfectly under extreme pressure.
+Stress tests simulate many users competing for a few spots to verify no overbooking and system stability.
 
-### 1. Full-Auth Stress Test (`test-booking-full-auth.ts`)
-- **What is it?**: Simulates 50 real users who simultaneously **register**, **login**, and then **book a ticket**.
-- **The Flow**:
-    1. Creates 50 unique test users on the fly.
-    2. Sends 50 simultaneous `/auth/register` and `/auth/login` requests.
-    3. Sends 50 simultaneous POST `/events/:id/bookings` requests using the newly received JWTs.
-- **Why?**: This proves that our authentication flow generates valid JWTs under pressure, and the database can handle writes to the `users`, `sessions`, and `bookings` tables simultaneously without deadlocks on initial creation.
+### Test Types
+
+| Test | Auth | Users | Purpose |
+|------|------|-------|---------|
+| **Full-Auth** | Real JWT | 50 | Register → Login → Book in one flow |
+| **Bypass-Auth** | `x-test-user-id` header | 50,000 | Booking logic + Redis + DB under load |
+| **Mega-Auth** | Real JWT | 50,000 | Full stack including JWT validation (in-process) |
+| **Mega-Auth Real** | Real JWT | 50,000 | Same as Mega-Auth but hits real HTTP server |
+
+### Full-Auth Stress Test (`test-booking-full-auth.ts`)
+- **What**: 50 real users register, login, and book simultaneously.
+- **Flow**: Create 50 users → 50 POST `/auth/register` + `/auth/login` → 50 POST `/events/:id/bookings`.
+- **Why**: Proves auth flow and DB handle concurrent writes without deadlocks.
 - **Run**: `npm run test:stress-full`
 
-### 2. Extreme Bypass Test (`test-booking-bypass-auth.ts`)
-- **What is it?**: Simulates **5,000+ users** hitting the booking API at the exact same millisecond. To achieve this speed, it generates a "fake" JWT signature that the server trusts (bypassing the slow bcrypt/database login).
-- **The Flow**:
-    1. Reads user IDs from pre-seeded data (`npm run db:seed-stress`).
-    2. Constructs 5,000 minimal JWTs in memory.
-    3. Fires 5000 requests instantly at the server for an event with only 5 remaining spots.
-- **Why?**: This proves our **Redis Gatekeeper** is lightning fast. It proves that exactly 5 users succeed, and 4,995 users get an instant `409 Sold Out` message without touching the PostgreSQL database, meaning the server doesn't crash from overwhelming DB connections.
-- **⚠️ CRITICAL STEP**: Run the seeding script first: `npm run db:seed-stress`. Without this, there are no users to inject into the JWTs.
+### Bypass-Auth Stress Test (`test-booking-bypass-auth.ts`)
+- **What**: 50,000 users hit the booking API in batches of 100. Uses `x-test-user-id` header (no JWT).
+- **Flow**:
+  1. Create event with 5 spots.
+  2. Fetch 50,000 pre-seeded users from DB.
+  3. Send 50,000 POST requests with `x-test-user-id: <userId>`.
+- **Why**: Tests Redis + DB under load without JWT overhead. Expects 5 × 201, 49,995 × 409.
+- **Prerequisite**: `npm run db:seed-stress`
 - **Run**: `npm run test:stress-bypass`
 
-### 3. Mega-Auth Stress Test (`test-booking-mega-auth.ts`)
-- **What is it?**: The ultimate test. Simulating **50,000** completely real, fully authenticated users hitting the booking endpoint simultaneously.
-- **The Flow (How to Run)**:
-    This test requires a massive amount of data to be pre-generated so we don't crash our system just setting up the test!
-    1. **Create the Users**: Run `npm run db:seed-stress`. This connects directly to PostgreSQL and inserts 50,000 rows into the `users` table.
-    2. **Generate the Keys**: Run `npm run test:tokens`. This uses our `generate-stress-tokens.ts` script to act as the Auth Service. It creates 50,000 mathematically valid JWT Access Tokens and saves them to a local JSON cache file.
-    3. **Launch the Attack**: Run `npm run test:mega-auth`. This script reads the cached tokens into memory and fires 50,000 `POST /events/:id/bookings` requests at the server as fast as Node can push them.
-- **Why?**: To test how the system performs when it has to verify a real cryptographic signature (`jwt.verify`) and handle Express request parsing for every single request at 50k scale. It proves our `app` is production-ready for massive, real-world API traffic spikes.
+### Mega-Auth Stress Test (`test-booking-mega-auth.ts`)
+- **What**: 50,000 fully authenticated users (real JWT) hit the booking API.
+- **Flow**:
+  1. Create event with 5 spots.
+  2. Load 50,000 pre-generated JWTs from cache.
+  3. Send 50,000 POST requests with `Authorization: Bearer <token>`.
+- **Why**: Tests full stack (JWT verify + booking) at scale.
+- **Prerequisites**: `npm run db:seed-stress`, `npm run test:tokens`
+- **Run**: `npm run test:mega-auth`
+
+### Mega-Auth Real API Test (`test-booking-mega-auth-real.ts`)
+- **What**: Same as Mega-Auth but hits the **actual HTTP server** (e.g. `http://localhost:3000`). Simulates real users over the network.
+- **Flow**:
+  1. **Start the server first** (Terminal 1): `npm run dev` or `npm run start:test`
+  2. Create event with 5 spots (via test script).
+  3. Load 50,000 JWTs and send real HTTP POST requests to the server.
+- **Why**: Tests how the real application behaves under load with real TCP/HTTP, not in-process supertest.
+- **Prerequisites**: `npm run test:tokens`, server must be running
+- **Run**: `npm run test:mega-auth:real`
+- **Note**: If server runs with `NODE_ENV=dev`, rate limit (100 req/min) applies. Use `npm run start:test` to skip rate limit and test full booking flow.
+
+### Batching Explained
+
+Requests are **not** sent all at once. They are sent in batches:
+
+- **Batch size**: 100 concurrent requests.
+- **Process**: Batch 1 (100) → wait → Batch 2 (100) → wait → … → Batch 500 (100).
+- **Why**: Avoids DB pool exhaustion and memory issues.
 
 ---
 
-## 3. Security: Rate-Limit Protection (`test:rate-limit`)
+## 3. Mega-Auth: In-Process vs Real API
 
-### 🛡️ Why do we test this?
-To prevent bots and hackers from "stressing" our server by sending thousands of requests per second. We want to ensure that only "good" traffic gets through and "bad" traffic is blocked.
+| Command | Mode | How it works |
+|---------|------|---------------|
+| `npm run test:mega-auth` | **In-process** | Supertest calls Express app directly. No HTTP. Fast, good for CI. |
+| `npm run test:mega-auth:real` | **Real API** | Hits actual HTTP server. **Start server first.** Simulates real users. |
 
-### 🧠 The Simple Logic:
-1.  **The Rule**: We allow exactly **100 requests** per minute per user.
-2.  **The Test**: We send **105 requests** very fast.
-3.  **The Goal**:
-    -   Requests **1 to 100** should be **✅ SUCCESS (200 OK)**.
-    -   Requests **101 to 105** should be **❌ BLOCKED (429 Too Many Requests)**.
-4.  **Result**: If the server blocks exactly after 100, the security is working!
+### Running Mega-Auth Real API
+
+1. **Terminal 1** – Start the server:
+   ```bash
+   npm run dev
+   # Or, to skip rate limiting: npm run start:test
+   ```
+
+2. **Terminal 2** – Run the stress test:
+   ```bash
+   npm run test:mega-auth:real
+   ```
+
+### Prerequisites for Real API
+
+- Run `npm run test:tokens` first.
+- Server must be running before the test.
+- **Rate limiting**: If server runs with `NODE_ENV=dev`, rate limit (100 req/min) applies. Most requests may get **429**. To test full booking flow, run server with `npm run start:test`.
+
+### Real API Results
+
+| Result | Meaning |
+|--------|---------|
+| **Success (201)** | Booking created |
+| **Conflict (409)** | Reached booking logic, spots full |
+| **HTTP 429** | Rate limited – blocked before booking logic |
+| **timeout** | Request took >30s; client gave up |
 
 ---
 
-## 4. 📊 Unified Reporting System
+## 4. Rate-Limit Security Test
 
-We have a premium reporting infrastructure that combines all test types into easy-to-read dashboards.
-
-### 📝 Markdown Report (`test-reports/TEST-REPORT.md`)
-- **What**: A clean, technical summary of all Vitest results.
-- **Why**: Perfect for a quick check in VS Code or during a Code Review.
-
-### 🎨 HTML Dashboard (`test-reports/report.html`)
-- **What**: A high-fidelity, visual dashboard including Stress & Security metrics.
-- **Why**: Best for a high-level view of system health, showing concurrency stats and rate-limiting successes visually.
+- **What**: Ensures the API blocks excessive requests.
+- **Rule**: 100 requests per minute per IP.
+- **Test**: Send 105 requests quickly.
+- **Expected**: 1–100 succeed (200), 101–105 blocked (429).
+- **Run**: `npm run test:rate-limit`
 
 ---
 
-## 🛠️ Step-by-Step Stress Testing & Reporting Workflow
+## 5. Reporting
 
-To properly run a full cycle and see the visual results, follow this exact execution order:
+| Output | Description |
+|--------|-------------|
+| `test-reports/TEST-REPORT.md` | Markdown summary of Vitest results |
+| `test-reports/report.html` | HTML dashboard with stress & security metrics |
+| `test-reports/custom-results.json` | Stress test metrics (duration, success/conflict counts) |
 
-1. **Test Rate Limiting Security** (Ensure the gatekeeper works before we scale)
-   ```bash
-   npm run test:rate-limit
-   ```
-2. **Run All Standard Logic Tests** (Verify no basic rules are broken)
-   ```bash
-   npm run test:all
-   ```
-3. **Run 50-User Full Flow** (Simulate standard traffic)
-   ```bash
-   npm run test:stress-full
-   ```
-4. **Extreme Bypass Test (5,000 Users)**
+---
+
+## 6. Workflow & Commands
+
+### Full Stress Testing Workflow
+
+1. **Rate limit**: `npm run test:rate-limit`
+2. **Standard tests**: `npm run test:all`
+3. **Full-auth (50 users)**: `npm run test:stress-full`
+4. **Bypass (50k users)**:
    ```bash
    npm run db:seed-stress
    npm run test:stress-bypass
    ```
-5. **Mega-Auth Test (50,000 Users)**
+5. **Mega-auth (50k users, in-process)**:
    ```bash
    npm run test:tokens
    npm run test:mega-auth
    ```
-6. **Generate & View the Final Report**
+6. **Mega-auth Real (50k users, real HTTP)** – Start server first, then:
    ```bash
-   npm run test:report
+   # Terminal 1
+   npm run start:test
+   # Terminal 2
+   npm run test:mega-auth:real
    ```
-   *Then open `test-reports/report.html` in your browser!*
+7. **Report**: `npm run test:report` → open `test-reports/report.html`
+
+### Command Cheat Sheet
+
+| Command | Purpose |
+|---------|---------|
+| `npm run test:all` | All unit, integration, API tests |
+| `npm run test:unit` | Unit tests only |
+| `npm run test:integration` | Integration tests only |
+| `npm run test:api` | API tests only |
+| `npm run test:stress-full` | 50-user full flow (register → login → book) |
+| `npm run test:stress-bypass` | 50k users, bypass auth |
+| `npm run test:mega-auth` | 50k users, real JWT (in-process) |
+| `npm run test:mega-auth:real` | 50k users, real JWT, real HTTP server |
+| `npm run test:rate-limit` | Rate-limit security test |
+| `npm run test:tokens` | Generate 50k JWTs for mega-auth |
+| `npm run db:seed-stress` | Seed 50k users for stress tests |
+| `npm run test:report` | Generate HTML & MD reports |
 
 ---
 
-## ❌ Common Errors & Solutions
+## 7. Request Flow & Concurrency
+
+### Bypass-Auth Flow
+
+```
+Request → x-test-user-id header → Auth middleware (bypass) → Booking controller
+         → Booking service
+           → Redis: DECRBY event:X:spots (atomic)
+           → If spots < 0: INCRBY (rollback), return 409
+           → Else: DB transaction (INSERT booking, UPDATE event.booked_count)
+           → On success: return 201
+```
+
+### Mega-Auth Flow
+
+```
+Request → Authorization: Bearer <JWT> → Auth middleware (verify JWT)
+         → Extract user from token → Booking controller
+         → [Same booking flow as above]
+```
+
+### Concurrency Control
+
+1. **Redis** – Atomic `DECRBY` to reserve spots before DB.
+2. **PostgreSQL** – Transaction with `SELECT ... FOR UPDATE` and `booked_count` check.
+3. **409 Conflict** – Returned when Redis or DB detects no spots left.
+
+### Log Explanation
+
+```
+[5000/50000] 30ms for last batch | ~2672 req/s elapsed
+```
+- `[5000/50000]` – 5,000 requests completed.
+- `30ms for last batch` – Last batch of 100 took 30 ms.
+- `~2672 req/s` – Average throughput (requests per second).
+
+---
+
+## 8. Common Errors
 
 | Error | Cause | Solution |
-| :--- | :--- | :--- |
-| `Only found 0 stress users` | You skipped the seeding step. | Run `npm run db:seed-stress` |
-| `Event not found (404)` | DB not initialized or event ID sync issue. | Run `npm run db:init` and retry. |
-| `Redis connection error` | Local Redis server is not running. | Start Redis (`redis-server`) on localhost:6379. |
-| `Rate limit not triggered` | `x-test-rate-limit` header missing. | Ensure you are using the provided test scripts. |
+|-------|-------|----------|
+| `Only found 0 stress users` | Seeding not run | `npm run db:seed-stress` |
+| `Token cache not found` | Tokens not generated | `npm run test:tokens` |
+| `Event not found (404)` | DB not initialized | `npm run db:init` |
+| `Redis connection error` | Redis not running | Start Redis on localhost:6379 |
+| `HTTP 429` (Real API) | Rate limit on server | Run server with `npm run start:test` |
+| `Rate limit not triggered` | Test header missing | Use provided test scripts |
 
 ---
 
-## 5. Test Infrastructure Folders
+## 9. Test Infrastructure
 
-| Folder | What's inside? |
-| :--- | :--- |
-| `tests/unit/` | Isolated logic tests. |
-| `tests/integration/` | Database and multi-service tests. |
-| `tests/api/` | Route and middleware tests. |
-| `tests/stress/` | High-concurrency performance scripts. |
-| `tests/scripts/` | Specialized data scripts (like seeding users). |
-| `test-reports/` | **[NEW]** Generated MD and HTML reports. |
-
----
-
-## 6. Command Cheat Sheet
-
-| Command | Category | Purpose |
-| :--- | :--- | :--- |
-| `npm run test:all` | **Core** | Run all basic logic, integration, and API tests. |
-| `npm run test:stress-full` | **Stress** | Test behavior with 50 simultaneous real user flows (Reg -> Login -> Book). |
-| `npm run test:stress-bypass` | **Stress** | Test Redis speed with 5,000 simultaneous bursts (bypasses auth). |
-| `npm run test:mega-auth` | **Stress** | **The Ultimate Test**: 50,000 fully authenticated simultaneous booking requests. |
-| `npm run test:rate-limit` | **Security** | Check if the API successfully blocks sequential spamming over 100 req/min. |
-| `npm run test:report` | **Reporting** | Generate the Unified HTML & MD Test Dashboard. |
-| `npm run test:tokens` | **Setup** | Pre-generate 50,000 valid JWT access tokens into a local JSON cache file. |
-| `npm run db:seed-stress` | **Setup** | Insert 50,000 test users directly into PostgreSQL for stress testing. |
-
+| Folder | Contents |
+|--------|----------|
+| `tests/unit/` | Isolated logic tests |
+| `tests/integration/` | Database and multi-service tests |
+| `tests/api/` | Route and middleware tests |
+| `tests/stress/` | Stress and concurrency scripts |
+| `tests/scripts/` | Data scripts (e.g. token generation) |
+| `tests/helpers/` | Shared test utilities |
+| `test-reports/` | Generated MD and HTML reports |

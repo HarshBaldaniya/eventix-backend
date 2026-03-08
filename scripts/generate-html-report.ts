@@ -26,23 +26,28 @@ interface CustomResult {
 
 const TEST_META: Record<string, { title: string; order: number; desc: string }> = {
     'Mega-Auth Stress Test (50k Scale)': {
-        title: '💎 Mega-Auth: Extreme Scale (Full JWT)',
+        title: '💎 Mega-Auth: Extreme Scale (In-Process)',
         order: 1,
-        desc: "Simulates 50,000 unique users logged in with real JWT tokens. Verifies CPU and Redis security overhead."
+        desc: "Simulates 50,000 users with real JWT tokens. In-process (supertest) – no HTTP. Verifies CPU and Redis overhead."
+    },
+    'Mega-Auth Stress Test (Real API)': {
+        title: '🌐 Mega-Auth Real API: Live HTTP Server',
+        order: 2,
+        desc: "Same as Mega-Auth but hits actual HTTP server (localhost:3000). Simulates real users over the network. Start server first."
     },
     'Extreme Bypass Stress Test': {
         title: '🚀 Extreme Bypass: Pure Load (Bypass Auth)',
-        order: 2,
-        desc: "Pure Performance Test. Simulates 50,000 requests using a bypass header to eliminate JWT overhead."
+        order: 3,
+        desc: "Pure Performance Test. Simulates 50,000 requests using x-test-user-id bypass to eliminate JWT overhead."
     },
     'Full-Auth Stress Test': {
-        title: '🔑 Full-Auth: standard scale (Setup-based)',
-        order: 3,
+        title: '🔑 Full-Auth: Standard Scale (Setup-based)',
+        order: 4,
         desc: "End-to-end integration. Registers 50 users from scratch and books for each."
     },
     'Rate Limit Validation Test': {
         title: '🛡️ Rate Limit: Security Protection (429)',
-        order: 4,
+        order: 5,
         desc: "Security Guard Test. Ensures our 100-request limit correctly triggers a 429 block."
     }
 };

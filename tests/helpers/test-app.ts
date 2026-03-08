@@ -1,7 +1,7 @@
 // Test app setup - loads config and returns supertest agent for API requests
 import 'dotenv/config';
 import { config as loadEnv } from 'dotenv';
-loadEnv({ path: '.env.dev' });
+loadEnv({ path: '.env.dev', override: false });  // Don't override NODE_ENV=test set by test scripts
 
 import supertest from 'supertest';
 import { loadAndValidateConfig } from '../../src/infrastructure/config/config.loader';
