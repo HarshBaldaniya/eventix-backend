@@ -22,6 +22,7 @@ import {
   EVB422001,
 } from '../../shared/constants/error-code.constants';
 import type { BookingResponseDto, BookingListDto, PaginationDto } from '../dtos/booking.dto';
+import type { BookingAuditOperation } from '../../domain/interfaces/booking-audit.repository.interface';
 
 const POSTGRES_DEADLOCK_CODE = '40P01';
 const DEADLOCK_RETRY_ATTEMPTS = 3;
@@ -76,7 +77,7 @@ export class BookingService {
           if (!reserved) throw new AppError('Unable to reserve spots (Sold Out)', STATUS_CODE_CONFLICT, EVB409001);
 
           const created = await this.bookingRepo.create(eventId, userId, ticketCount, client);
-          this.recordAudit(eventId, userId, ticketCount, 'success', { booking_id: created.id }, client);
+          this.recordAudit('book', eventId, userId, ticketCount, 'success', { booking_id: created.id }, client);
 
           return created;
         })
@@ -123,16 +124,16 @@ export class BookingService {
   }
 
   private async reportFailure(eventId: number, userId: number, count: number, reason: string, code: string, msg: string, client?: any): Promise<never> {
-    this.recordAudit(eventId, userId, count, 'failure', { reason, error_code: code, error_message: msg }, client);
+    this.recordAudit('book', eventId, userId, count, 'failure', { reason, error_code: code, error_message: msg }, client);
     throw new AppError(msg, STATUS_CODE_CONFLICT, code, { event_id: eventId });
   }
 
-  private async recordAudit(eventId: number, userId: number, count: number, outcome: 'success' | 'failure', details: any, client?: any) {
+  private async recordAudit(operation: BookingAuditOperation, eventId: number, userId: number, count: number, outcome: 'success' | 'failure', details: any, client?: any): Promise<void> {
     try {
       await this.bookingAuditRepo.insert({
-        operation: 'book',
+        operation,
         event_id: eventId,
-        booking_id: details.booking_id || null,
+        booking_id: details.booking_id ?? null,
         user_id: userId,
         ticket_count: count,
         outcome,
@@ -179,7 +180,7 @@ export class BookingService {
         await this.eventRepo.decrementBookedCount(booking.event_id, booking.ticket_count, client);
         await getRedisClient().incrby(getEventSpotsKey(booking.event_id), booking.ticket_count);
 
-        this.recordAudit(booking.event_id, userId, booking.ticket_count, 'success', { action: 'cancel' }, client);
+        this.recordAudit('cancel', booking.event_id, userId, booking.ticket_count, 'success', { booking_id: bookingId }, client);
         return updated;
       })
     ).then(b => this.toDto(b));
